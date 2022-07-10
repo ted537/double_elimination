@@ -3,23 +3,35 @@ This defines a double elimination 'Tournament' object.
 """
 import math
 import itertools
+from typing import Iterator, List, Optional, TypeVar, Generic
 
 from double_elimination.match import Match
 from double_elimination.participant import Participant
 
-class Tournament:
+T = TypeVar('T')
+
+class Tournament(Generic[T]):
     """
     This is a double-elimination tournament where each match is between 2 competitors.
     When a competitor loses they are sent to the losers bracket where they'll play until
-    they lose again or they make it to the final match against the winner of the winners bracket.
+    they lose again or they mEake it to the final match against the winner of the winners bracket.
     It does not handle a second "grand finals" match, that should be handled outside of this object.
     It takes in a list of competitors, which can be strings or any type of Python object,
     but they should be unique. They should be ordered by a seed, with the first entry being the most
     skilled and the last being the least. They can also be randomized before creating the instance.
     Optional options dict fields:
     """
+
+    __with_grand_finals: bool
+    __winner: Participant
+
+    __created_grand_finals: bool = False
+
     def __init__(self, competitors_list, options={}):
         assert len(competitors_list) > 1
+
+        self.__with_grand_finals = options.get('with_grand_finals',False)
+
         self.__matches = []
         next_higher_power_of_two = int(math.pow(2, math.ceil(math.log2(len(competitors_list)))))
         winners_number_of_byes = next_higher_power_of_two - len(competitors_list)
@@ -106,7 +118,7 @@ class Tournament:
         self.__winner = match.get_winner_participant()
         self.__matches.append(match)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Match]:
         return iter(self.__matches)
 
     def __repr__(self) -> str:
@@ -114,19 +126,19 @@ class Tournament:
         num_matches = len(self.__matches)
         return f'<Tournament winner={winner} num_matches={num_matches}>'
 
-    def get_active_matches(self):
+    def get_active_matches(self) -> List[Match[T]]:
         """
         Returns a list of all matches that are ready to be played.
         """
         return [match for match in self.get_matches() if match.is_ready_to_start()]
 
-    def get_matches(self):
+    def get_matches(self) -> List[Match]:
         """
         Returns a list of all matches for the tournament.
         """
         return self.__matches
 
-    def get_active_matches_for_competitor(self, competitor):
+    def get_active_matches_for_competitor(self, competitor: T) -> List[Match]:
         """
         Given the string or object of the competitor that was supplied
         when creating the tournament instance,
@@ -139,7 +151,7 @@ class Tournament:
                 matches.append(match)
         return matches
 
-    def get_winners(self):
+    def get_winners(self) -> Optional[List[T]]:
         """
         Returns None if the tournament is done, otherwise
         returns list of the one victor.
@@ -148,8 +160,45 @@ class Tournament:
             return None
         return [self.__winner.get_competitor()]
 
-    def add_win(self, match, competitor):
+    def add_win(self, match: Match, competitor: T) -> None:
         """
         Set the victor of a match, given the competitor string/object and match.
         """
+        
         match.set_winner(competitor)
+
+        # Since the winner of the overall tournament is the winner
+        # of the finals match, we use this relationship to detect
+        # whether this is the finals match.
+        # TODO need to make distinction between finals and grand finals.
+        is_finals = match.get_winner_participant() == self.__winner
+        # Do we need to worry about grand finals? That is, this is a finals
+        # match and the 'with_grand_finals' was set to 'True' when
+        # the tournament was constructed.
+        if (
+            self.__with_grand_finals and is_finals 
+            and not self.__created_grand_finals
+        ):
+            # From .__init__(), the right participant of the finals match
+            # is from the loser's bracket. If the loser's bracket wins,
+            # then we call for a rematch, as this is the first loss
+            # for the competitor from the winner's bracket.
+            _, right_participant = match.get_participants()
+            if competitor == right_participant.competitor:
+                # Add an extra 'grand-finals' match. The winner of this match
+                # is always the winner of the overall tournament.
+                self.__matches.append(Match(
+                    # Link the left (input) participant of the grand-finals
+                    # match to the winner (output) participant of the finals
+                    # match.
+                    left_participant=match.get_winner_participant(),
+                    # Similarly, link the right (input) participant of the
+                    # grand-finals match to the loser (output) participant
+                    # of the finals match.
+                    right_participant=match.get_loser_participant()
+                ))
+                # Assign the winner of the tournament to the winner of the
+                # (just added) grand-finals match, rather than the finals
+                # match.
+                self.__winner = self.__matches[-1].get_winner_participant()
+                self.__created_grand_finals = True

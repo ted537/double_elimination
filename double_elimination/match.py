@@ -3,14 +3,20 @@ A match represents a single match in a tournament, between 2 participants.
 It adds empty participants as placeholders for the winner and loser,
 so they can be accessed as individual object pointers.
 """
+
+from typing import Generic, List, TypeVar, Union
+
 from double_elimination.participant import Participant
 
-class Match:
+T = TypeVar('T')
+
+class Match(Generic[T]):
     """
     A match represents a single match in a tournament, between 2 participants.
     It adds empty participants as placeholders for the winner and loser,
     so they can be accessed as individual object pointers.
     """
+
     def __init__(self, left_participant, right_participant):
         self.__left_participant = left_participant
         self.__right_participant = right_participant
@@ -51,7 +57,7 @@ class Match:
         """
         return self.__loser
 
-    def get_participants(self):
+    def get_participants(self) -> List[Participant[T]]:
         """
         Get the left and right participants in a list.
         """
