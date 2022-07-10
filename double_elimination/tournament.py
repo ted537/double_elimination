@@ -8,7 +8,7 @@ from typing import Iterator, List, Optional, TypeVar, Generic
 from double_elimination.match import Match
 from double_elimination.participant import Participant
 
-T = TypeVar('T')
+T = TypeVar('T') # Type of underlying competitor.
 
 class Tournament(Generic[T]):
     """
@@ -23,37 +23,60 @@ class Tournament(Generic[T]):
     """
 
     __with_grand_finals: bool
+    ''' Input parameter: Do we include grand-finals? '''
+
     __winner: Participant
+    ''' Participant representing winner. Since participants can be empty,
+        this will always be set, but .__winner.competitor will be 'None'
+        until the tournament is complete. '''
 
     __created_grand_finals: bool = False
+    ''' Have we already created the grand-finals match?'''
+
+    __matches: List[Match[T]]
+    ''' Matches in tournament. Structure is stored in participants shared 
+        between matches.'''
 
     def __init__(self, competitors_list, options={}):
+        # Only tournaments with 2 or more competitors are valid.
         assert len(competitors_list) > 1
-
+        # Parse and store 'with_grand_finals' option, defaulting to False.
         self.__with_grand_finals = options.get('with_grand_finals',False)
 
         self.__matches = []
+        # Find minimum 'n' such that 2^n >= number of competitors
         next_higher_power_of_two = int(math.pow(2, math.ceil(math.log2(len(competitors_list)))))
+        # Since the bracket is fundamentally a binary tree with 2^n nodes,
+        # assign the winner enough byes to fill out the 2^n slots.
         winners_number_of_byes = next_higher_power_of_two - len(competitors_list)
+        # Create participants for first round (real and empty)
         incoming_participants = list(map(Participant, competitors_list))
         incoming_participants.extend([None] * winners_number_of_byes)
-
+        # Keep track of the participants at the end of the winner's and
+        # loser's brackets. Later, we will assemble these into the finals match.
         last_winner = None
         last_loser = None
-
+        
         losers_by_round = []
         while len(incoming_participants) > 1:
             losers = []
+            # Split participants into best and worst
+            # NOTE: Is this true for rounds beyond the first???
             half_length = int(len(incoming_participants)/2)
             first = incoming_participants[0:half_length]
             last = incoming_participants[half_length:]
             last.reverse()
             next_round_participants = []
             for participant_pair in zip(first, last):
+                # If we have only one participant, send that participant
+                # directly to the next round.
                 if participant_pair[1] is None:
                     next_round_participants.append(participant_pair[0])
                 elif participant_pair[0] is None:
                     next_round_participants.append(participant_pair[1])
+                # If we have two participants, generate a match and send
+                # the winner of the match to the next winner's round,
+                # and the loser of the match to the loser's bracket.
                 else:
                     match = Match(participant_pair[0], participant_pair[1])
                     next_round_participants.append(match.get_winner_participant())
@@ -64,28 +87,36 @@ class Tournament(Generic[T]):
                 losers_by_round.append(losers)
             incoming_participants = next_round_participants
 
+        # TODO what is this???
         if winners_number_of_byes > 0 and len(losers_by_round) > 1:
             losers_by_round[1].extend(losers_by_round[0])
             losers_by_round = losers_by_round[1:]
 
+        
         empty_by_round = []
         for __ in losers_by_round:
             empty_by_round.append([])
+        # List-of-lists that looks like
+        # [some losers, empty list, some losers, empty list , ... ]
         losers_by_round = list(itertools.chain(*zip(losers_by_round, empty_by_round)))
         if len(losers_by_round) > 2:
             new_losers = [losers_by_round[0]]
             new_losers.extend(losers_by_round[2:])
             losers_by_round = new_losers
 
+        # TODO why do we reverse every 4 rounds?
         for loser_round in range(0, len(losers_by_round), 4):
             losers_by_round[loser_round].reverse()
 
+        # Create loser's bracket using loser participants from winner's bracket.
         index = 0
         incoming_participants = []
         for losers in losers_by_round:
             incoming_participants = losers
 
             if len(incoming_participants) > 1:
+                # Find minimum 'n' such that 
+                # 2^n < number of participants in this round.
                 next_higher_power_of_two = int(math.pow(2, math.ceil(math.log2(len(incoming_participants)))))
                 number_of_byes = next_higher_power_of_two - len(incoming_participants)
                 incoming_participants.extend([None] * number_of_byes)
@@ -111,14 +142,18 @@ class Tournament(Generic[T]):
                         losers_by_round[index + 1].extend(incoming_participants)
             elif len(losers_by_round) > index + 1:
                 losers_by_round[index + 1].extend(incoming_participants)
+            # If this round only has 1 participant, then it must be the
+            # output of the loser's bracket. Remember this so that we can
+            # send the winner of the loser's bracket to the finals match.
             if len(incoming_participants) == 1:
                 last_loser = incoming_participants[0]
             index += 1
+
         match = Match(last_winner, last_loser)
         self.__winner = match.get_winner_participant()
         self.__matches.append(match)
 
-    def __iter__(self) -> Iterator[Match]:
+    def __iter__(self) -> Iterator[Match[T]]:
         return iter(self.__matches)
 
     def __repr__(self) -> str:
@@ -132,13 +167,13 @@ class Tournament(Generic[T]):
         """
         return [match for match in self.get_matches() if match.is_ready_to_start()]
 
-    def get_matches(self) -> List[Match]:
+    def get_matches(self) -> List[Match[T]]:
         """
         Returns a list of all matches for the tournament.
         """
         return self.__matches
 
-    def get_active_matches_for_competitor(self, competitor: T) -> List[Match]:
+    def get_active_matches_for_competitor(self, competitor: T) -> List[Match[T]]:
         """
         Given the string or object of the competitor that was supplied
         when creating the tournament instance,
