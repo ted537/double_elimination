@@ -47,7 +47,7 @@ class Tournament(Generic[T]):
         # Find minimum 'n' such that 2^n >= number of competitors
         next_higher_power_of_two = int(math.pow(2, math.ceil(math.log2(len(competitors_list)))))
         # Since the bracket is fundamentally a binary tree with 2^n nodes,
-        # assign the winner enough byes to fill out the 2^n slots.
+        # assign the winners enough byes to fill out the 2^n slots.
         winners_number_of_byes = next_higher_power_of_two - len(competitors_list)
         # Create participants for first round (real and empty)
         incoming_participants = list(map(Participant, competitors_list))
@@ -99,7 +99,12 @@ class Tournament(Generic[T]):
         # Mix in empty rounds to the loser's bracket. This gives extra 'room'
         # such that we can sufficiently thin out the loser's bracket
         # to match the number of incoming participants from the winner's
-        # bracket in each round. 
+        # bracket in each round.
+        # Rationale: For any round beyond the first, the loser's brakcet will 
+        # receive 'n' participants from the previous round of the winner's
+        # bracket and the loser's bracket. In the next round, we will receive
+        # 'n/2' participants from the winner's bracket. Thus, we need to trim
+        # down the loser's bracket by a factor of 4, which will take 2 rounds.
         empty_by_round = []
         for __ in losers_by_round:
             empty_by_round.append([])
